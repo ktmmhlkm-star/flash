@@ -1,0 +1,60 @@
+name: Build Flash APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Configure Android Project
+        run: |
+          flutter create . --project-name flash --org com.example
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle*
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK (universal)
+        run: flutter build apk --release
+
+      - name: Build APK (per-ABI - smaller)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flash-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Flash v1.0.${{ github.run_number }}
+          files: build/app/outputs/flutter-apk/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
